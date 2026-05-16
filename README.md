@@ -1,10 +1,10 @@
 # Epidemiological Data Pipeline - Araçatuba/SP
 
-This repository contains Databricks notebooks for transforming public epidemiological datasets from Araçatuba, São Paulo, Brazil, into structured Delta tables and SQL views suitable for analytical dashboards and web application consumption.
+This repository contains the Databricks pipeline used to transform public epidemiological datasets from Araçatuba, São Paulo, Brazil, into analytical Delta tables, spatial views, and Supabase PostgreSQL tables for dashboard and web application consumption.
 
-The project covers historical and spatial epidemiological data related to COVID-19, arboviruses, scorpion accidents, and case records by neighborhood. The pipeline includes data ingestion, cleaning, standardization, dimensional modeling, neighborhood name standardization, geographic enrichment, and validation.
+The project covers temporal and spatial epidemiological data related to COVID-19, arboviruses, scorpion accidents, dengue cases by neighborhood, and chikungunya cases by neighborhood. The pipeline includes raw data ingestion, cleaning, standardization, dimensional modeling, neighborhood name curation, geographic enrichment, spatial validation, and export to Supabase PostgreSQL.
 
-Database object names and field names are kept in Portuguese, such as `dim_tempo`, `fato_*`, `doenca`, and `bairro`, to preserve compatibility with the implemented ETL notebooks, the database model, and the technical report. Repository documentation is written in English.
+Database object names and field names are kept in Portuguese, such as `dim_tempo`, `fato_*`, `doenca`, and `bairro`, to preserve compatibility with the implemented ETL notebooks, the relational model, and the technical report. Repository documentation is written in English.
 
 ## Project objective
 
@@ -12,9 +12,37 @@ The objective is to organize heterogeneous public health spreadsheets into a con
 
 - temporal analysis of epidemiological cases;
 - spatial visualization by neighborhood when reliable location data are available;
-- disease and period filters for dashboards;
-- data quality and spatial coverage indicators;
-- future integration with a FastAPI backend and a Bootstrap/Leaflet frontend.
+- disease, source, and period filters for dashboards;
+- spatial data quality indicators;
+- integration with a FastAPI backend and a Bootstrap/Leaflet frontend.
+
+## Current repository structure
+
+The Databricks workspace is organized by pipeline stage:
+
+```text
+epidemiologia_aracatuba/
+├── 01_raw_etl/
+│   ├── ETL_arboviroses
+│   ├── ETL_chikungunya_espacial
+│   ├── ETL_covid_serie_historica
+│   ├── ETL_dengue_espacial
+│   └── ETL_escorpiao_serie_historica
+├── 02_modeling/
+│   ├── ETL_curadoria_bairros
+│   ├── ETL_curadoria_geografica_manual
+│   ├── ETL_dim_bairro_geografica
+│   ├── ETL_dimensoes
+│   ├── ETL_geocode_bairros_osm
+│   ├── ETL_padroniza_bairros
+│   └── ETL_validacao_espacial
+├── 03_export/
+│   └── EXPORT_supabase_postgresql
+├── README.md
+└── README_geocoding.md
+```
+
+If the notebooks are exported from Databricks before publication, the same logical structure should be preserved. Depending on the export format, notebook filenames may receive extensions such as `.ipynb`, `.py`, or `.html`.
 
 ## Target architecture
 
@@ -23,19 +51,21 @@ Public epidemiological CSV files
     ↓
 Raw tables in Databricks
     ↓
-Source ETL notebooks
+01_raw_etl notebooks
     ↓
 Intermediate Delta fact tables
     ↓
-Dimension and final fact modeling
+02_modeling notebooks
     ↓
-Neighborhood standardization and curation
+Final dimensions, final facts, and analytical views
     ↓
-Geocoding and geographic curation
+Neighborhood standardization and geographic enrichment
     ↓
 Spatial validation
     ↓
-SQL views for backend and dashboard consumption
+03_export notebook
+    ↓
+Supabase PostgreSQL
     ↓
 FastAPI backend
     ↓
@@ -67,36 +97,41 @@ These reference tables may be created from CSV files before running the neighbor
 
 ## Recommended execution order
 
-### 1. Source ETL notebooks
+### 1. Raw ETL stage
 
-These notebooks transform raw public datasets into intermediate Delta fact tables.
+Run the notebooks in `01_raw_etl/` first. These notebooks transform raw public datasets into intermediate Delta fact tables.
 
-1. `ETL_covid_serie_historica`
-2. `ETL_arboviroses`
-3. `ETL_escorpiao_serie_historica`
-4. `ETL_dengue_espacial`
-5. `ETL_chikungunya_espacial`
+1. `01_raw_etl/ETL_covid_serie_historica`
+2. `01_raw_etl/ETL_arboviroses`
+3. `01_raw_etl/ETL_escorpiao_serie_historica`
+4. `01_raw_etl/ETL_dengue_espacial`
+5. `01_raw_etl/ETL_chikungunya_espacial`
 
-### 2. Dimensional modeling
+### 2. Modeling and spatial enrichment stage
 
-6. `ETL_dimensoes`
+Run the notebooks in `02_modeling/` after the raw ETL stage.
 
-This notebook creates the base dimensions, final fact tables, and first SQL views for analytical consumption.
+6. `02_modeling/ETL_dimensoes`
+7. `02_modeling/ETL_padroniza_bairros`
+8. `02_modeling/ETL_curadoria_bairros`
+9. `02_modeling/ETL_geocode_bairros_osm`
+10. `02_modeling/ETL_curadoria_geografica_manual`
+11. `02_modeling/ETL_dim_bairro_geografica`
+12. `02_modeling/ETL_validacao_espacial`
 
-### 3. Neighborhood standardization and spatial enrichment
+The spatial enrichment stage is separated from the source ETL because neighborhood names and geographic coordinates require additional curation. This design avoids silently converting uncertain names into misleading map points.
 
-7. `ETL_padroniza_bairros`
-8. `ETL_curadoria_bairros`
-9. `ETL_geocode_bairros_osm`
-10. `ETL_curadoria_geografica_manual`
-11. `ETL_dim_bairro_geografica`
-12. `ETL_validacao_espacial`
+### 3. Supabase export stage
 
-The spatial enrichment stage is separated from the epidemiological ETL because neighborhood names and geographic coordinates require additional curation. This design avoids silently converting uncertain names into misleading map points.
+Run the notebook in `03_export/` only after the Databricks analytical and spatial validation steps are complete.
+
+13. `03_export/EXPORT_supabase_postgresql`
+
+This notebook exports the final Databricks tables to Supabase PostgreSQL and can recreate PostgreSQL consumption views for the backend and dashboard.
 
 ## Intermediate tables
 
-The source ETL notebooks create the following intermediate Delta tables:
+The raw ETL notebooks create the following intermediate Delta tables:
 
 - `workspace.default.fato_covid`
 - `workspace.default.fato_arboviroses`
@@ -108,7 +143,7 @@ These tables preserve source-specific structures before the final analytical mod
 
 ## Final analytical model
 
-`ETL_dimensoes` creates the main analytical model.
+`02_modeling/ETL_dimensoes` creates the main analytical model.
 
 ### Dimension tables
 
@@ -157,9 +192,15 @@ The spatial pipeline creates reference, curation, geocoding, and final geographi
 - `workspace.default.vw_mapa_casos_bairro_mapeavel`
 - `workspace.default.vw_qualidade_espacial`
 
+The recommended Databricks view for the main Leaflet map layer is:
+
+```sql
+workspace.default.vw_mapa_casos_bairro_mapeavel
+```
+
 ## Coordinate priority rule
 
-`ETL_dim_bairro_geografica` applies the following priority rule for coordinates:
+`02_modeling/ETL_dim_bairro_geografica` applies the following priority rule for coordinates:
 
 1. manually curated reference points from `ref_bairro_geocoding_manual`;
 2. validated or draft OSM/Nominatim results from `bairro_geocoding_validated` or `bairro_geocoding_draft`;
@@ -183,7 +224,74 @@ The recommended view for the main Leaflet map layer is:
 workspace.default.vw_mapa_casos_bairro_mapeavel
 ```
 
-This view contains only records classified as safely mappable.
+Only records classified as safely mappable should be rendered as neighborhood points in the dashboard map.
+
+## Supabase PostgreSQL export
+
+`03_export/EXPORT_supabase_postgresql` exports the final Databricks Delta tables from `workspace.default` to Supabase PostgreSQL.
+
+The export notebook uses Python `psycopg` to write to PostgreSQL. This avoids Spark JDBC write limitations in Databricks Free/Serverless environments. The notebook still reads the source tables from Databricks with Spark.
+
+### Required Databricks Secrets
+
+Supabase credentials must be stored in Databricks Secrets and must not be hard-coded in the notebook or committed to GitHub.
+
+Expected secret configuration:
+
+```text
+Scope: supabase
+Key: jdbc_url
+Key: user
+Key: password
+```
+
+Expected `jdbc_url` format for the Supabase Session Pooler:
+
+```text
+jdbc:postgresql://aws-1-sa-east-1.pooler.supabase.com:5432/postgres?sslmode=require
+```
+
+Expected `user` format for the Supabase Session Pooler:
+
+```text
+postgres.<project-ref>
+```
+
+### Tables exported to Supabase
+
+The export order is important because fact tables depend on dimension tables through foreign keys.
+
+1. `dim_tempo`
+2. `dim_doenca`
+3. `dim_bairro`
+4. `dim_sexo`
+5. `dim_bairro_geografica`
+6. `fato_arboviroses_final`
+7. `fato_covid_final`
+8. `fato_escorpiao_final`
+9. `fato_dengue_espacial_final`
+10. `fato_chikungunya_espacial_final`
+
+The target PostgreSQL tables must already exist in Supabase with compatible columns. The notebook aligns the Databricks DataFrame to the existing target table columns before inserting rows.
+
+### Supabase consumption views
+
+When `CREATE_CONSUMPTION_VIEWS = True`, the export notebook creates or replaces the following PostgreSQL views:
+
+- `public.vw_serie_temporal`
+- `public.vw_casos_espaciais`
+- `public.vw_casos_espaciais_geo`
+- `public.vw_mapa_casos_bairro`
+- `public.vw_mapa_casos_bairro_mapeavel`
+- `public.vw_qualidade_espacial`
+
+After exporting, the following SQL checks can be run in Supabase:
+
+```sql
+select * from public.vw_serie_temporal limit 10;
+select * from public.vw_mapa_casos_bairro_mapeavel limit 10;
+select * from public.vw_qualidade_espacial;
+```
 
 ## Main transformations and modeling decisions
 
@@ -200,14 +308,15 @@ This view contains only records classified as safely mappable.
 - Created final dimensions and surrogate-key-based fact tables.
 - Created SQL views for temporal charts, spatial case analysis, map layers, and spatial quality monitoring.
 - Added neighborhood standardization, alias matching, manual curation, OSM/Nominatim geocoding, manual coordinate curation, and spatial validation layers.
+- Exported the final analytical model to Supabase PostgreSQL for external application consumption.
 
 ## Validation strategy
 
-The project includes two validation levels.
+The project includes three validation levels.
 
 ### Base analytical validation
 
-`ETL_dimensoes` validates the base analytical model by checking:
+`02_modeling/ETL_dimensoes` validates the base analytical model by checking:
 
 - final table and view row counts;
 - null surrogate keys in final fact tables;
@@ -217,7 +326,7 @@ The project includes two validation levels.
 
 ### Spatial validation
 
-`ETL_validacao_espacial` validates the final spatial model by checking:
+`02_modeling/ETL_validacao_espacial` validates the final spatial model by checking:
 
 - existence of required spatial objects;
 - row counts in spatial views;
@@ -231,6 +340,10 @@ The project includes two validation levels.
 
 Fatal validation errors must be corrected before exposing the spatial views through the backend.
 
+### Supabase export validation
+
+`03_export/EXPORT_supabase_postgresql` validates the PostgreSQL export by checking row counts for exported tables and selected consumption views after loading.
+
 ## Current limitations
 
 - The geographic layer uses point references, not official neighborhood polygons.
@@ -239,11 +352,31 @@ Fatal validation errors must be corrected before exposing the spatial views thro
 - Some neighborhood names in public bulletins are incomplete, generic, inconsistent, or not safely geocodable.
 - Chikungunya spatial data does not contain daily dates and therefore uses `ano_referencia`.
 - Public source files may contain formatting inconsistencies because they come from heterogeneous bulletins.
+- Supabase export depends on the existence of target PostgreSQL tables with compatible schemas.
 
 ## Repository and security notes
 
-Credentials, tokens, connection strings, local environment files, and personal access tokens are not part of this repository.
+Credentials, tokens, connection strings with passwords, local environment files, and personal access tokens must not be committed to this repository.
 
-Databricks HTML exports with UUID filenames should be renamed with descriptive notebook names before publication. When available, `.ipynb` exports are preferable for code review and reproducibility.
+Before committing exported notebooks to GitHub:
 
+- clear notebook outputs when possible;
+- confirm that no password or full credential-bearing connection string is present;
+- keep Supabase credentials only in Databricks Secrets;
+- avoid committing local temporary exports or sensitive data files;
+- preserve the current folder structure by pipeline stage.
 
+## Version control and ignored files
+
+This repository includes a `.gitignore` file to prevent local configuration files, credentials, temporary files, notebook checkpoints, and local exports from being committed.
+
+The `.gitignore` is especially important because the project uses Databricks Secrets and Supabase PostgreSQL credentials. Credentials, tokens, connection strings with passwords, local environment files, and personal access tokens must never be committed to GitHub.
+
+The ignored files include:
+
+- local environment files, such as `.env`;
+- token, key, certificate, and Databricks archive files;
+- Python cache files and notebook checkpoints;
+- local editor and operating system files;
+- optional local data exports;
+- temporary and backup files.

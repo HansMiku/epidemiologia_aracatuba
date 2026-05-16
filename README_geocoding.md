@@ -2,7 +2,28 @@
 
 This document describes the spatial enrichment stage of the Araçatuba/SP epidemiological data pipeline.
 
-The purpose of this stage is to standardize neighborhood names, create controlled geocoding inputs, obtain or curate coordinates, build a geographic neighborhood dimension, and validate map-ready SQL views for backend and dashboard use.
+The purpose of this stage is to standardize neighborhood names, create controlled geocoding inputs, obtain or curate coordinates, build a geographic neighborhood dimension, validate map-ready SQL views, and prepare the spatial model for Supabase PostgreSQL export and dashboard use.
+
+## Repository placement
+
+The spatial enrichment notebooks are stored in the `02_modeling/` folder:
+
+```text
+epidemiologia_aracatuba/
+└── 02_modeling/
+    ├── ETL_padroniza_bairros
+    ├── ETL_curadoria_bairros
+    ├── ETL_geocode_bairros_osm
+    ├── ETL_curadoria_geografica_manual
+    ├── ETL_dim_bairro_geografica
+    └── ETL_validacao_espacial
+```
+
+The base dimensional notebook is also in `02_modeling/` and must be executed before the spatial enrichment stage:
+
+```text
+02_modeling/ETL_dimensoes
+```
 
 ## Rationale
 
@@ -12,16 +33,16 @@ The pipeline therefore separates epidemiological transformation from geographic 
 
 ## Required previous steps
 
-The spatial enrichment notebooks depend on the outputs of the source ETL and dimensional modeling stages.
+The spatial enrichment notebooks depend on the outputs of the raw ETL and dimensional modeling stages.
 
 The following notebooks must be executed first:
 
-1. `ETL_covid_serie_historica`
-2. `ETL_arboviroses`
-3. `ETL_escorpiao_serie_historica`
-4. `ETL_dengue_espacial`
-5. `ETL_chikungunya_espacial`
-6. `ETL_dimensoes`
+1. `01_raw_etl/ETL_covid_serie_historica`
+2. `01_raw_etl/ETL_arboviroses`
+3. `01_raw_etl/ETL_escorpiao_serie_historica`
+4. `01_raw_etl/ETL_dengue_espacial`
+5. `01_raw_etl/ETL_chikungunya_espacial`
+6. `02_modeling/ETL_dimensoes`
 
 At minimum, the following objects must exist before the spatial stage starts:
 
@@ -30,7 +51,7 @@ At minimum, the following objects must exist before the spatial stage starts:
 
 ## Required reference tables
 
-`ETL_padroniza_bairros` reads two reference tables from Databricks:
+`02_modeling/ETL_padroniza_bairros` reads two reference tables from Databricks:
 
 - `workspace.default.canonical_neighborhoods`
 - `workspace.default.alias_seed_rules`
@@ -62,12 +83,18 @@ These tables can be created from CSV files before running the notebook.
 
 The spatial notebooks should be executed in this order:
 
-1. `ETL_padroniza_bairros`
-2. `ETL_curadoria_bairros`
-3. `ETL_geocode_bairros_osm`
-4. `ETL_curadoria_geografica_manual`
-5. `ETL_dim_bairro_geografica`
-6. `ETL_validacao_espacial`
+1. `02_modeling/ETL_padroniza_bairros`
+2. `02_modeling/ETL_curadoria_bairros`
+3. `02_modeling/ETL_geocode_bairros_osm`
+4. `02_modeling/ETL_curadoria_geografica_manual`
+5. `02_modeling/ETL_dim_bairro_geografica`
+6. `02_modeling/ETL_validacao_espacial`
+
+After spatial validation, the Supabase export can be executed through:
+
+```text
+03_export/EXPORT_supabase_postgresql
+```
 
 ## Notebook responsibilities
 
@@ -199,6 +226,38 @@ Non-mappable records should be reported separately through `vw_qualidade_espacia
 - `validated_geocoding` indicates an approved OSM/Nominatim result.
 - `draft_geocoding` indicates an available coordinate that still requires caution.
 - `missing_coordinates`, `unresolved_name`, and `not_geocodable_source_name` represent data quality limitations and should not be plotted as precise locations.
+- Non-mappable records are part of the data quality analysis and should not be removed from the project documentation.
+
+## Supabase export relationship
+
+The spatial model is exported to Supabase through:
+
+```text
+03_export/EXPORT_supabase_postgresql
+```
+
+The export includes the final geographic dimension:
+
+- `public.dim_bairro_geografica`
+
+When the export notebook is configured with `CREATE_CONSUMPTION_VIEWS = True`, it creates or replaces the following spatial views in Supabase:
+
+- `public.vw_casos_espaciais_geo`
+- `public.vw_mapa_casos_bairro`
+- `public.vw_mapa_casos_bairro_mapeavel`
+- `public.vw_qualidade_espacial`
+
+The recommended Supabase view for the frontend map layer is:
+
+```sql
+public.vw_mapa_casos_bairro_mapeavel
+```
+
+The recommended Supabase view for spatial quality indicators is:
+
+```sql
+public.vw_qualidade_espacial
+```
 
 ## Quality and reproducibility considerations
 
@@ -207,27 +266,10 @@ Non-mappable records should be reported separately through `vw_qualidade_espacia
 - Public bulletins may contain inconsistent or incomplete neighborhood names.
 - The absence of a mappable coordinate is preserved as information rather than hidden by forced geocoding.
 - The spatial validation notebook should be part of every full pipeline run before dashboard publication.
+- Supabase export should be executed only after spatial validation is successful.
 
-## Repository notes
+## Repository and security notes
 
-Credentials, tokens, local configuration files, and Databricks connection strings are not part of this repository.
+Credentials, tokens, local configuration files, Databricks secrets, and Supabase connection strings with passwords are not part of this repository.
 
 Databricks HTML exports with UUID filenames should be renamed using descriptive notebook names. `.ipynb` exports are preferable when available.
-
-Recommended placement in the repository:
-
-```text
-epidemiologia_aracatuba/
-├── README.md
-├── README_geocoding.md
-├── notebooks/
-│   ├── 07_ETL_padroniza_bairros.ipynb
-│   ├── 08_ETL_curadoria_bairros.ipynb
-│   ├── 09_ETL_geocode_bairros_osm.ipynb
-│   ├── 10_ETL_curadoria_geografica_manual.ipynb
-│   ├── 11_ETL_dim_bairro_geografica.ipynb
-│   └── 12_ETL_validacao_espacial.ipynb
-└── reference_tables/
-    ├── canonical_neighborhoods.csv
-    └── alias_seed_rules.csv
-```
